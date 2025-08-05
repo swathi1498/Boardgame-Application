@@ -1,0 +1,79 @@
+pipeline
+{
+    agent any
+    stages
+    {
+        stage("git checkout")
+        {
+            steps
+            {
+                checkout scmGit(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/jaiswaladi246/Boardgame.git']])
+            }
+        }
+        stage("sonar-code analysis")
+         {
+             steps
+             {
+                 withSonarQubeEnv("sonar-server")
+                 {
+                     sh "mvn verify sonar:sonar"
+                 }
+             }
+         }
+         stage("quality gate")
+         {
+             steps
+             {
+                timeout(time: 5, unit: 'MINUTES')
+                {
+                    waitForQualityGate abortPipeline: true
+                }
+             }
+         }
+         stage("Build")
+        {
+            steps
+            {
+                sh 'mvn clean package'
+            }
+            post
+            {
+                success{
+                    echo 'now archiving'
+                    archiveArtifacts artifacts: 'target/*.jar', followSymlinks: false
+                }
+            }
+         }
+         stage("nexus artifactory upload")
+         {
+             steps
+             {
+                 nexusArtifactUploader artifacts: [[artifactId: 'boardgame', classifier: '', file: 'target/database_service_project-0.0.7-SNAPSHOT.jar', type: 'jar']], credentialsId: '5dee7c1d-8541-4b18-8981-7c4807726d10', groupId: 'DEV', nexusUrl: '13.218.207.2:8081', nexusVersion: 'nexus3', protocol: 'http', repository: 'boardgame', version: '0.0.7-${BUILD_ID}'
+             }
+         }
+         stage("Building docker image")
+         {
+             steps
+             {
+                 sh 'docker build -t kumarltd/boardgame:latest .'
+             }
+         }
+         stage("pushing to docker hub")
+         {
+             steps
+             {
+                 withDockerRegistry(credentialsId: 'c9af75eb-ad84-405d-b592-46e72d78ff37', url: 'https://index.docker.io/v1/')
+                 {
+                     sh 'docker push kumarltd/boardgame:latest'
+                 }
+             }
+         }
+         stage("deploying with k8s")
+         {
+             steps
+             {
+                 sh 'kubectl apply -f deployment-service.yaml'
+             }
+         }
+    }
+}

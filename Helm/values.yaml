@@ -1,0 +1,4 @@
+image:
+  repository: adijaiswal/boardshack
+  tag: latest
+  pullPolicy: Always
